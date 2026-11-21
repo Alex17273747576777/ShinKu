@@ -8,6 +8,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.GetApp
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LibraryBooks
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Storage
@@ -53,6 +54,7 @@ fun MoreScreen(
     onClickAbout: () -> Unit,
     onClickUpdates: () -> Unit,
     onClickHistory: () -> Unit,
+    onClickLibraryManagement: () -> Unit = {},
 ) {
     val uriHandler = LocalUriHandler.current
     val downloadQueueState = downloadQueueStateProvider()
@@ -113,6 +115,12 @@ fun MoreScreen(
                         subtitle = "Manage Gemini AI, performance, and advanced features",
                         icon = Icons.Outlined.AutoAwesome,
                         onClick = onClickConfigureFeatures,
+                    )
+                    com.shinku.reader.presentation.more.components.CommandRowItem(
+                        title = "Entry & Duplicate Management",
+                        subtitle = "Review duplicate titles, merge groups, and missing sources",
+                        icon = Icons.Outlined.LibraryBooks,
+                        onClick = onClickLibraryManagement,
                     )
                     if (!showNavUpdates) {
                         com.shinku.reader.presentation.more.components.CommandRowItem(

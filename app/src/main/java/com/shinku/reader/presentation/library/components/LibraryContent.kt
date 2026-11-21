@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,8 +26,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.work.WorkInfo
 import com.shinku.reader.core.preference.PreferenceMutableState
+import com.shinku.reader.data.library.LibraryUpdateJob
 import com.shinku.reader.domain.category.model.Category
 import com.shinku.reader.domain.library.model.LibraryDisplayMode
 import com.shinku.reader.domain.library.model.LibraryManga
@@ -35,12 +39,11 @@ import com.shinku.reader.presentation.core.components.material.PullRefresh
 import com.shinku.reader.presentation.core.util.collectAsState
 import com.shinku.reader.presentation.util.LocalHomeBottomInset
 import com.shinku.reader.ui.library.LibraryItem
+import com.shinku.reader.util.system.workManager
 import kotlinx.collections.immutable.ImmutableList
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
-import kotlin.time.Duration.Companion.seconds
 
 @Composable
 fun LibraryContent(
@@ -102,8 +105,14 @@ fun LibraryContent(
         // SY <--
         val pagerState = rememberPagerState(coercedCurrentPage) { categories.size }
 
+        val context = LocalContext.current
         val scope = rememberCoroutineScope()
-        var isRefreshing by remember(pagerState.currentPage) { mutableStateOf(false) }
+        val libraryWorkInfos by remember(context) {
+            context.workManager.getWorkInfosByTagFlow(LibraryUpdateJob.TAG)
+        }.collectAsState(initial = emptyList())
+        val isRefreshing = remember(libraryWorkInfos) {
+            libraryWorkInfos.any { it.state == WorkInfo.State.RUNNING }
+        }
 
         val readingItems = remember(lastReadItem, activeReadingList) {
             if (activeReadingList.isNotEmpty()) activeReadingList else listOfNotNull(lastReadItem)
@@ -143,14 +152,7 @@ fun LibraryContent(
             refreshing = isRefreshing,
             enabled = selection.isEmpty(),
             onRefresh = {
-                val started = onRefresh()
-                if (!started) return@PullRefresh
-                scope.launch {
-                    // Fake refresh status but hide it after a second as it's a long running task
-                    isRefreshing = true
-                    delay(1.seconds)
-                    isRefreshing = false
-                }
+                onRefresh()
             },
         ) {
             LibraryPager(

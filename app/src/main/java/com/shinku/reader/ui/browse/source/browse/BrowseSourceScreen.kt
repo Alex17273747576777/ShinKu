@@ -1,5 +1,6 @@
 package com.shinku.reader.ui.browse.source.browse
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,9 +26,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -38,18 +39,29 @@ import androidx.compose.ui.platform.LocalUriHandler
 import cafe.adriel.voyager.core.model.rememberScreenModel
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import com.shinku.reader.core.common.Constants
+import com.shinku.reader.core.common.util.lang.launchIO
+import com.shinku.reader.domain.source.model.StubSource
+import com.shinku.reader.exh.md.follows.MangaDexFollowsScreen
+import com.shinku.reader.exh.ui.ifSourcesLoaded
+import com.shinku.reader.feature.migration.dialog.MigrateMangaDialog
+import com.shinku.reader.i18n.MR
 import com.shinku.reader.presentation.browse.BrowseSourceContent
 import com.shinku.reader.presentation.browse.MissingSourceScreen
+import com.shinku.reader.presentation.browse.components.BrowseSelectionToolbar
 import com.shinku.reader.presentation.browse.components.BrowseSourceToolbar
 import com.shinku.reader.presentation.browse.components.RemoveMangaDialog
 import com.shinku.reader.presentation.browse.components.SavedSearchCreateDialog
 import com.shinku.reader.presentation.browse.components.SavedSearchDeleteDialog
 import com.shinku.reader.presentation.category.components.ChangeCategoryDialog
+import com.shinku.reader.presentation.core.components.material.Scaffold
+import com.shinku.reader.presentation.core.components.material.padding
+import com.shinku.reader.presentation.core.i18n.stringResource
+import com.shinku.reader.presentation.core.screens.LoadingScreen
+import com.shinku.reader.presentation.core.util.collectAsLazyPagingItems
 import com.shinku.reader.presentation.manga.DuplicateMangaDialog
 import com.shinku.reader.presentation.util.AssistContentScreen
 import com.shinku.reader.presentation.util.Screen
-import eu.kanade.tachiyomi.source.CatalogueSource
-import eu.kanade.tachiyomi.source.online.HttpSource
 import com.shinku.reader.ui.browse.extension.details.SourcePreferencesScreen
 import com.shinku.reader.ui.browse.source.SourcesScreen
 import com.shinku.reader.ui.browse.source.browse.BrowseSourceScreenModel.Listing
@@ -57,22 +69,12 @@ import com.shinku.reader.ui.category.CategoryScreen
 import com.shinku.reader.ui.manga.MangaScreen
 import com.shinku.reader.ui.webview.WebViewScreen
 import com.shinku.reader.util.system.toast
-import com.shinku.reader.exh.md.follows.MangaDexFollowsScreen
-import com.shinku.reader.exh.ui.ifSourcesLoaded
+import eu.kanade.tachiyomi.source.CatalogueSource
+import eu.kanade.tachiyomi.source.local.LocalSource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.receiveAsFlow
-import com.shinku.reader.feature.migration.dialog.MigrateMangaDialog
-import com.shinku.reader.presentation.core.util.collectAsLazyPagingItems
-import com.shinku.reader.core.common.Constants
-import com.shinku.reader.core.common.util.lang.launchIO
-import com.shinku.reader.domain.source.model.StubSource
-import com.shinku.reader.i18n.MR
-import com.shinku.reader.presentation.core.components.material.Scaffold
-import com.shinku.reader.presentation.core.components.material.padding
-import com.shinku.reader.presentation.core.i18n.stringResource
-import com.shinku.reader.presentation.core.screens.LoadingScreen
-import eu.kanade.tachiyomi.source.local.LocalSource
 
 data class BrowseSourceScreen(
     val sourceId: Long,
@@ -148,6 +150,23 @@ data class BrowseSourceScreen(
             assistUrl = (screenModel.source as? HttpSource)?.baseUrl
         }
 
+        val mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems()
+        val getLoadedManga: () -> List<com.shinku.reader.domain.manga.model.Manga> = {
+            (0 until mangaList.itemCount).mapNotNull { index ->
+                mangaList.peek(index)?.value?.first
+            }
+        }
+
+        BackHandler(enabled = state.selection.selectionMode) {
+            screenModel.exitSelectionMode()
+        }
+
+        LaunchedEffect(Unit) {
+            screenModel.bulkFavoriteEvents.collectLatest { summary ->
+                snackbarHostState.showSnackbar(summary.formatMessage())
+            }
+        }
+
         Scaffold(
             topBar = {
                 Column(
@@ -155,18 +174,29 @@ data class BrowseSourceScreen(
                         .background(MaterialTheme.colorScheme.surface)
                         .pointerInput(Unit) {},
                 ) {
-                    BrowseSourceToolbar(
-                        searchQuery = state.toolbarQuery,
-                        onSearchQueryChange = screenModel::setToolbarQuery,
-                        source = screenModel.source,
-                        displayMode = screenModel.displayMode,
-                        onDisplayModeChange = { screenModel.displayMode = it },
-                        navigateUp = navigateUp,
-                        onWebViewClick = onWebViewClick,
-                        onHelpClick = onHelpClick,
-                        onSettingsClick = { navigator.push(SourcePreferencesScreen(sourceId)) },
-                        onSearch = screenModel::search,
-                    )
+                    if (state.selection.selectionMode) {
+                        BrowseSelectionToolbar(
+                            selectedCount = state.selection.selectedCount,
+                            onCancelSelectionMode = screenModel::exitSelectionMode,
+                            onSelectAllLoaded = { screenModel.selectAllLoaded(getLoadedManga()) },
+                            onInvertLoaded = { screenModel.invertLoaded(getLoadedManga()) },
+                            onAddSelectedToLibrary = screenModel::requestBulkAddToLibrary,
+                        )
+                    } else {
+                        BrowseSourceToolbar(
+                            searchQuery = state.toolbarQuery,
+                            onSearchQueryChange = screenModel::setToolbarQuery,
+                            source = screenModel.source,
+                            displayMode = screenModel.displayMode,
+                            onDisplayModeChange = { screenModel.displayMode = it },
+                            navigateUp = navigateUp,
+                            onWebViewClick = onWebViewClick,
+                            onHelpClick = onHelpClick,
+                            onSettingsClick = { navigator.push(SourcePreferencesScreen(sourceId)) },
+                            onSearch = screenModel::search,
+                            onEnterSelectionMode = screenModel::enterSelectionMode,
+                        )
+                    }
 
                     Row(
                         modifier = Modifier
@@ -260,7 +290,7 @@ data class BrowseSourceScreen(
         ) { paddingValues ->
             BrowseSourceContent(
                 source = screenModel.source,
-                mangaList = screenModel.mangaPagerFlowFlow.collectAsLazyPagingItems(),
+                mangaList = mangaList,
                 columns = screenModel.getColumnsPreference(LocalConfiguration.current.orientation),
                 // SY -->
                 ehentaiBrowseDisplayMode = screenModel.ehentaiBrowseDisplayMode,
@@ -271,20 +301,32 @@ data class BrowseSourceScreen(
                 onWebViewClick = onWebViewClick,
                 onHelpClick = { uriHandler.openUri(Constants.URL_HELP) },
                 onLocalSourceHelpClick = onHelpClick,
-                onMangaClick = { navigator.push(MangaScreen(it.id, true, smartSearchConfig)) },
-                onMangaLongClick = { manga ->
-                    scope.launchIO {
-                        val duplicates = screenModel.getDuplicateLibraryManga(manga)
-                        when {
-                            manga.favorite -> screenModel.setDialog(BrowseSourceScreenModel.Dialog.RemoveManga(manga))
-                            duplicates.isNotEmpty() -> screenModel.setDialog(
-                                BrowseSourceScreenModel.Dialog.AddDuplicateManga(manga, duplicates),
-                            )
-                            else -> screenModel.addFavorite(manga)
-                        }
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onMangaClick = { manga ->
+                    if (state.selection.selectionMode) {
+                        screenModel.toggleSelection(manga)
+                    } else {
+                        navigator.push(MangaScreen(manga.id, true, smartSearchConfig))
                     }
                 },
+                onMangaLongClick = { manga ->
+                    if (state.selection.selectionMode) {
+                        screenModel.toggleSelection(manga)
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    } else {
+                        scope.launchIO {
+                            val duplicates = screenModel.getDuplicateLibraryManga(manga)
+                            when {
+                                manga.favorite -> screenModel.setDialog(BrowseSourceScreenModel.Dialog.RemoveManga(manga))
+                                duplicates.isNotEmpty() -> screenModel.setDialog(
+                                    BrowseSourceScreenModel.Dialog.AddDuplicateManga(manga, duplicates),
+                                )
+                                else -> screenModel.addFavorite(manga)
+                            }
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
+                    }
+                },
+                isSelected = state.selection::isSelected,
             )
         }
 
@@ -369,6 +411,16 @@ data class BrowseSourceScreen(
                     onConfirm = { include, _ ->
                         screenModel.changeMangaFavorite(dialog.manga)
                         screenModel.moveMangaToCategories(dialog.manga, include)
+                    },
+                )
+            }
+            is BrowseSourceScreenModel.Dialog.BulkChangeMangaCategory -> {
+                ChangeCategoryDialog(
+                    initialSelection = dialog.initialSelection,
+                    onDismissRequest = onDismissRequest,
+                    onEditCategories = { navigator.push(CategoryScreen()) },
+                    onConfirm = { include, _ ->
+                        screenModel.confirmBulkAddToLibrary(dialog.mangas, include)
                     },
                 )
             }

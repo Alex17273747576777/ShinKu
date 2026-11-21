@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.FlipToBack
@@ -21,22 +19,25 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.shinku.reader.i18n.MR
+import com.shinku.reader.i18n.sy.SYMR
 import com.shinku.reader.presentation.components.AppBar
 import com.shinku.reader.presentation.components.AppBarActions
 import com.shinku.reader.presentation.components.SearchToolbar
-import kotlinx.collections.immutable.persistentListOf
-import com.shinku.reader.i18n.MR
-import com.shinku.reader.i18n.sy.SYMR
 import com.shinku.reader.presentation.core.components.Pill
 import com.shinku.reader.presentation.core.i18n.stringResource
 import com.shinku.reader.presentation.core.theme.active
+import kotlinx.collections.immutable.persistentListOf
 
 @Composable
 fun LibraryToolbar(
     hasActiveFilters: Boolean,
     selectedCount: Int,
+    selectedOutOfViewCount: Int = 0,
     title: LibraryToolbarTitle,
     onClickUnselectAll: () -> Unit,
     onClickSelectAll: () -> Unit,
@@ -46,6 +47,7 @@ fun LibraryToolbar(
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomManga: () -> Unit,
     onClickSyncNow: () -> Unit,
+    onClickManageEntries: (() -> Unit)? = null,
     // SY -->
     onClickSyncExh: (() -> Unit)?,
     isSyncEnabled: Boolean,
@@ -56,6 +58,7 @@ fun LibraryToolbar(
 ) = when {
     selectedCount > 0 -> LibrarySelectionToolbar(
         selectedCount = selectedCount,
+        selectedOutOfViewCount = selectedOutOfViewCount,
         onClickUnselectAll = onClickUnselectAll,
         onClickSelectAll = onClickSelectAll,
         onClickInvertSelection = onClickInvertSelection,
@@ -65,11 +68,13 @@ fun LibraryToolbar(
         hasFilters = hasActiveFilters,
         searchQuery = searchQuery,
         onSearchQueryChange = onSearchQueryChange,
+        onClickSelectAll = onClickSelectAll,
         onClickFilter = onClickFilter,
         onClickRefresh = onClickRefresh,
         onClickGlobalUpdate = onClickGlobalUpdate,
         onClickOpenRandomManga = onClickOpenRandomManga,
         onClickSyncNow = onClickSyncNow,
+        onClickManageEntries = onClickManageEntries,
         // SY -->
         onClickSyncExh = onClickSyncExh,
         isSyncEnabled = isSyncEnabled,
@@ -84,11 +89,13 @@ private fun LibraryRegularToolbar(
     hasFilters: Boolean,
     searchQuery: String?,
     onSearchQueryChange: (String?) -> Unit,
+    onClickSelectAll: () -> Unit,
     onClickFilter: () -> Unit,
     onClickRefresh: () -> Unit,
     onClickGlobalUpdate: () -> Unit,
     onClickOpenRandomManga: () -> Unit,
     onClickSyncNow: () -> Unit,
+    onClickManageEntries: (() -> Unit)? = null,
     // SY -->
     onClickSyncExh: (() -> Unit)?,
     isSyncEnabled: Boolean,
@@ -146,10 +153,22 @@ private fun LibraryRegularToolbar(
                         onClick = onClickRefresh,
                     ),
                     AppBar.OverflowAction(
+                        title = stringResource(MR.strings.action_select_all),
+                        onClick = onClickSelectAll,
+                    ),
+                    AppBar.OverflowAction(
                         title = stringResource(MR.strings.action_open_random_manga),
                         onClick = onClickOpenRandomManga,
                     ),
                 ).builder().apply {
+                    if (onClickManageEntries != null) {
+                        add(
+                            AppBar.OverflowAction(
+                                title = "Manage duplicates & groups",
+                                onClick = onClickManageEntries,
+                            ),
+                        )
+                    }
                     // SY -->
                     if (onClickSyncExh != null) {
                         add(
@@ -178,12 +197,18 @@ private fun LibraryRegularToolbar(
 @Composable
 private fun LibrarySelectionToolbar(
     selectedCount: Int,
+    selectedOutOfViewCount: Int = 0,
     onClickUnselectAll: () -> Unit,
     onClickSelectAll: () -> Unit,
     onClickInvertSelection: () -> Unit,
 ) {
+    val label = if (selectedOutOfViewCount > 0) {
+        "$selectedCount ($selectedOutOfViewCount hidden)"
+    } else {
+        "$selectedCount"
+    }
     AppBar(
-        titleContent = { Text(text = "$selectedCount") },
+        titleContent = { Text(text = label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         actions = {
             AppBarActions(
                 persistentListOf(

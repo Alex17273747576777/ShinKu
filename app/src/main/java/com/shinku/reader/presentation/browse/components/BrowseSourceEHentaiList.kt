@@ -1,5 +1,6 @@
 package com.shinku.reader.presentation.browse.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,24 +33,24 @@ import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
 import com.gowtham.ratingbar.ComposeStars
 import com.gowtham.ratingbar.RatingBarStyle
-import dev.icerock.moko.resources.StringResource
-import com.shinku.reader.presentation.manga.components.MangaCover
+import com.shinku.reader.core.common.i18n.pluralStringResource
+import com.shinku.reader.core.common.util.lang.withIOContext
+import com.shinku.reader.domain.manga.model.Manga
 import com.shinku.reader.exh.metadata.MetadataUtil
 import com.shinku.reader.exh.metadata.metadata.EHentaiSearchMetadata
 import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
 import com.shinku.reader.exh.util.SourceTagsUtil
 import com.shinku.reader.exh.util.SourceTagsUtil.GenreColor
 import com.shinku.reader.exh.util.floor
-import kotlinx.coroutines.flow.StateFlow
-import com.shinku.reader.core.common.i18n.pluralStringResource
-import com.shinku.reader.core.common.util.lang.withIOContext
-import com.shinku.reader.domain.manga.model.Manga
 import com.shinku.reader.i18n.MR
 import com.shinku.reader.i18n.sy.SYMR
 import com.shinku.reader.presentation.core.components.Badge
 import com.shinku.reader.presentation.core.components.BadgeGroup
 import com.shinku.reader.presentation.core.components.material.padding
 import com.shinku.reader.presentation.core.i18n.stringResource
+import com.shinku.reader.presentation.manga.components.MangaCover
+import dev.icerock.moko.resources.StringResource
+import kotlinx.coroutines.flow.StateFlow
 import java.time.Instant
 import java.time.ZoneId
 
@@ -59,6 +60,7 @@ fun BrowseSourceEHentaiList(
     contentPadding: PaddingValues,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
+    isSelected: (Manga) -> Boolean = { false },
 ) {
     LazyColumn(
         contentPadding = contentPadding,
@@ -79,6 +81,7 @@ fun BrowseSourceEHentaiList(
                 // SY -->
                 metadata = metadata,
                 // SY <--
+                isSelected = isSelected(manga),
                 onClick = { onMangaClick(manga) },
                 onLongClick = { onMangaLongClick(manga) },
             )
@@ -98,6 +101,7 @@ fun BrowseSourceEHentaiListItem(
     // SY -->
     metadata: RaisedSearchMetadata?,
     // SY <--
+    isSelected: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = onClick,
 ) {
@@ -163,6 +167,13 @@ fun BrowseSourceEHentaiListItem(
     Row(
         modifier = Modifier
             .height(148.dp)
+            .then(
+                if (isSelected) {
+                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f))
+                } else {
+                    Modifier
+                },
+            )
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,

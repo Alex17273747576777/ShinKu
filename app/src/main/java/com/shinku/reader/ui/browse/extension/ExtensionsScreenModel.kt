@@ -4,16 +4,18 @@ import android.app.Application
 import androidx.compose.runtime.Immutable
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import dev.icerock.moko.resources.StringResource
+import com.shinku.reader.core.common.util.lang.launchIO
 import com.shinku.reader.domain.base.BasePreferences
 import com.shinku.reader.domain.extension.interactor.GetExtensionsByType
 import com.shinku.reader.domain.source.service.SourcePreferences
-import com.shinku.reader.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import com.shinku.reader.extension.ExtensionManager
 import com.shinku.reader.extension.model.Extension
 import com.shinku.reader.extension.model.InstallStep
-import eu.kanade.tachiyomi.source.online.HttpSource
+import com.shinku.reader.i18n.MR
+import com.shinku.reader.presentation.components.SEARCH_DEBOUNCE_MILLIS
 import com.shinku.reader.util.system.LocaleHelper
+import dev.icerock.moko.resources.StringResource
+import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,8 +30,6 @@ import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import com.shinku.reader.core.common.util.lang.launchIO
-import com.shinku.reader.i18n.MR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import kotlin.time.Duration.Companion.seconds
@@ -209,6 +209,48 @@ class ExtensionsScreenModel(
         }
     }
 
+    fun toggleSelectionMode() {
+        mutableState.update {
+            if (it.selectionMode) {
+                it.copy(selectionMode = false, selectedPkgNames = emptySet())
+            } else {
+                it.copy(selectionMode = true)
+            }
+        }
+    }
+
+    fun exitSelectionMode() {
+        mutableState.update { it.copy(selectionMode = false, selectedPkgNames = emptySet()) }
+    }
+
+    fun toggleExtensionSelection(pkgName: String) {
+        mutableState.update { state ->
+            val updated = if (pkgName in state.selectedPkgNames) {
+                state.selectedPkgNames - pkgName
+            } else {
+                state.selectedPkgNames + pkgName
+            }
+            state.copy(selectionMode = true, selectedPkgNames = updated)
+        }
+    }
+
+    fun installOrUpdateSelected() {
+        val selected = state.value.selectedPkgNames
+        if (selected.isEmpty()) return
+        val matchingExtensions = state.value.items.values
+            .flatten()
+            .map { it.extension }
+            .filter { it.pkgName in selected }
+        exitSelectionMode()
+        matchingExtensions.forEach { extension ->
+            when (extension) {
+                is Extension.Available -> installExtension(extension)
+                is Extension.Installed -> if (extension.hasUpdate) updateExtension(extension)
+                is Extension.Untrusted -> Unit
+            }
+        }
+    }
+
     @Immutable
     data class State(
         val isLoading: Boolean = true,
@@ -217,6 +259,8 @@ class ExtensionsScreenModel(
         val updates: Int = 0,
         val installer: BasePreferences.ExtensionInstaller? = null,
         val searchQuery: String? = null,
+        val selectionMode: Boolean = false,
+        val selectedPkgNames: Set<String> = emptySet(),
     ) {
         val isEmpty = items.isEmpty()
     }

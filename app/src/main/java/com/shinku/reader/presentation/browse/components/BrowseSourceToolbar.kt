@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.automirrored.outlined.Help
 import androidx.compose.material.icons.filled.ViewModule
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarScrollBehavior
@@ -12,20 +13,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.shinku.reader.domain.library.model.LibraryDisplayMode
+import com.shinku.reader.exh.source.anyIs
+import com.shinku.reader.i18n.MR
 import com.shinku.reader.presentation.components.AppBar
 import com.shinku.reader.presentation.components.AppBarActions
 import com.shinku.reader.presentation.components.AppBarTitle
 import com.shinku.reader.presentation.components.DropdownMenu
 import com.shinku.reader.presentation.components.RadioMenuItem
 import com.shinku.reader.presentation.components.SearchToolbar
+import com.shinku.reader.presentation.core.i18n.stringResource
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.Source
-import com.shinku.reader.exh.source.anyIs
-import kotlinx.collections.immutable.persistentListOf
-import com.shinku.reader.domain.library.model.LibraryDisplayMode
-import com.shinku.reader.i18n.MR
-import com.shinku.reader.presentation.core.i18n.stringResource
 import eu.kanade.tachiyomi.source.local.LocalSource
+import kotlinx.collections.immutable.persistentListOf
 
 @Composable
 fun BrowseSourceToolbar(
@@ -39,6 +40,7 @@ fun BrowseSourceToolbar(
     onHelpClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onSearch: (String) -> Unit,
+    onEnterSelectionMode: (() -> Unit)? = null,
     scrollBehavior: TopAppBarScrollBehavior? = null,
 ) {
     // Avoid capturing unstable source in actions lambda
@@ -59,6 +61,15 @@ fun BrowseSourceToolbar(
             AppBarActions(
                 actions = persistentListOf<AppBar.AppBarAction>().builder()
                     .apply {
+                        if (onEnterSelectionMode != null) {
+                            add(
+                                AppBar.Action(
+                                    title = "Select",
+                                    icon = Icons.Outlined.Checklist,
+                                    onClick = onEnterSelectionMode,
+                                ),
+                            )
+                        }
                         if (displayMode != null) {
                             add(
                                 AppBar.Action(

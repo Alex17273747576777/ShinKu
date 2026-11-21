@@ -16,29 +16,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
+import com.shinku.reader.core.common.i18n.stringResource
+import com.shinku.reader.domain.library.model.LibraryDisplayMode
+import com.shinku.reader.domain.manga.model.Manga
+import com.shinku.reader.domain.source.model.StubSource
+import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
+import com.shinku.reader.exh.source.isEhBasedSource
+import com.shinku.reader.i18n.MR
 import com.shinku.reader.presentation.browse.components.BrowseSourceComfortableGrid
 import com.shinku.reader.presentation.browse.components.BrowseSourceCompactGrid
 import com.shinku.reader.presentation.browse.components.BrowseSourceEHentaiList
 import com.shinku.reader.presentation.browse.components.BrowseSourceList
 import com.shinku.reader.presentation.components.AppBar
-import com.shinku.reader.presentation.util.formattedMessage
-import eu.kanade.tachiyomi.source.Source
-import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
-import com.shinku.reader.exh.source.isEhBasedSource
-import kotlinx.collections.immutable.persistentListOf
-import kotlinx.collections.immutable.toImmutableList
-import kotlinx.coroutines.flow.StateFlow
-import com.shinku.reader.core.common.i18n.stringResource
-import com.shinku.reader.domain.library.model.LibraryDisplayMode
-import com.shinku.reader.domain.manga.model.Manga
-import com.shinku.reader.domain.source.model.StubSource
-import com.shinku.reader.i18n.MR
 import com.shinku.reader.presentation.core.components.material.Scaffold
 import com.shinku.reader.presentation.core.i18n.stringResource
 import com.shinku.reader.presentation.core.screens.EmptyScreen
 import com.shinku.reader.presentation.core.screens.EmptyScreenAction
 import com.shinku.reader.presentation.core.screens.LoadingScreen
+import com.shinku.reader.presentation.util.formattedMessage
+import eu.kanade.tachiyomi.source.Source
 import eu.kanade.tachiyomi.source.local.LocalSource
+import kotlinx.collections.immutable.persistentListOf
+import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun BrowseSourceContent(
@@ -58,6 +58,7 @@ fun BrowseSourceContent(
     // SY <--
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
+    isSelected: (Manga) -> Boolean = { false },
 ) {
     val context = LocalContext.current
 
@@ -143,6 +144,7 @@ fun BrowseSourceContent(
             contentPadding = contentPadding,
             onMangaClick = onMangaClick,
             onMangaLongClick = onMangaLongClick,
+            isSelected = isSelected,
         )
         return
     }
@@ -156,6 +158,7 @@ fun BrowseSourceContent(
                 contentPadding = contentPadding,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                isSelected = isSelected,
                 source = source,
             )
         }
@@ -165,6 +168,7 @@ fun BrowseSourceContent(
                 contentPadding = contentPadding,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                isSelected = isSelected,
             )
         }
         LibraryDisplayMode.CompactGrid, LibraryDisplayMode.CoverOnlyGrid -> {
@@ -174,6 +178,7 @@ fun BrowseSourceContent(
                 contentPadding = contentPadding,
                 onMangaClick = onMangaClick,
                 onMangaLongClick = onMangaLongClick,
+                isSelected = isSelected,
             )
         }
     }

@@ -11,18 +11,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.paging.LoadState
 import androidx.paging.compose.LazyPagingItems
-import com.shinku.reader.presentation.library.components.CommonMangaItemDefaults
-import com.shinku.reader.presentation.library.components.MangaListItem
 import com.shinku.reader.R
+import com.shinku.reader.domain.manga.model.Manga
+import com.shinku.reader.domain.manga.model.MangaCover
 import com.shinku.reader.exh.metadata.metadata.MangaDexSearchMetadata
 import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
 import com.shinku.reader.exh.metadata.metadata.RankedSearchMetadata
-import kotlinx.coroutines.flow.StateFlow
-import com.shinku.reader.domain.manga.model.Manga
-import com.shinku.reader.domain.manga.model.MangaCover
 import com.shinku.reader.presentation.core.components.Badge
 import com.shinku.reader.presentation.core.i18n.stringResource
 import com.shinku.reader.presentation.core.util.plus
+import com.shinku.reader.presentation.library.components.CommonMangaItemDefaults
+import com.shinku.reader.presentation.library.components.MangaListItem
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun BrowseSourceList(
@@ -30,6 +30,7 @@ fun BrowseSourceList(
     contentPadding: PaddingValues,
     onMangaClick: (Manga) -> Unit,
     onMangaLongClick: (Manga) -> Unit,
+    isSelected: (Manga) -> Boolean = { false },
 ) {
     LazyColumn(
         contentPadding = contentPadding + PaddingValues(vertical = 8.dp),
@@ -52,6 +53,7 @@ fun BrowseSourceList(
                 // SY -->
                 metadata = metadata,
                 // SY <--
+                isSelected = isSelected(manga),
                 onClick = { onMangaClick(manga) },
                 onLongClick = { onMangaLongClick(manga) },
             )
@@ -71,11 +73,13 @@ private fun BrowseSourceListItem(
     // SY -->
     metadata: RaisedSearchMetadata?,
     // SY <--
+    isSelected: Boolean = false,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = onClick,
 ) {
     MangaListItem(
         title = manga.title,
+        isSelected = isSelected,
         coverData = MangaCover(
             mangaId = manga.id,
             sourceId = manga.source,

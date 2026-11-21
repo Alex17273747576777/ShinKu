@@ -13,28 +13,59 @@ import androidx.paging.filter
 import androidx.paging.map
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
-import dev.icerock.moko.resources.StringResource
+import com.shinku.reader.core.common.preference.CheckboxState
+import com.shinku.reader.core.common.preference.mapAsCheckboxState
+import com.shinku.reader.core.common.util.lang.launchIO
+import com.shinku.reader.core.common.util.lang.launchNonCancellable
+import com.shinku.reader.core.common.util.lang.withUIContext
 import com.shinku.reader.core.preference.asState
+import com.shinku.reader.data.cache.CoverCache
+import com.shinku.reader.domain.category.interactor.GetCategories
+import com.shinku.reader.domain.category.interactor.SetMangaCategories
+import com.shinku.reader.domain.category.model.Category
+import com.shinku.reader.domain.chapter.interactor.SetMangaDefaultChapterFlags
+import com.shinku.reader.domain.library.service.LibraryPreferences
+import com.shinku.reader.domain.manga.interactor.GetDuplicateLibraryManga
+import com.shinku.reader.domain.manga.interactor.GetFlatMetadataById
+import com.shinku.reader.domain.manga.interactor.GetManga
+import com.shinku.reader.domain.manga.interactor.GroupManga
 import com.shinku.reader.domain.manga.interactor.UpdateManga
+import com.shinku.reader.domain.manga.model.Manga
+import com.shinku.reader.domain.manga.model.MangaWithChapterCount
+import com.shinku.reader.domain.manga.model.toMangaUpdate
+import com.shinku.reader.domain.source.interactor.DeleteSavedSearchById
 import com.shinku.reader.domain.source.interactor.GetExhSavedSearch
 import com.shinku.reader.domain.source.interactor.GetIncognitoState
+import com.shinku.reader.domain.source.interactor.GetRemoteManga
+import com.shinku.reader.domain.source.interactor.InsertSavedSearch
+import com.shinku.reader.domain.source.model.EXHSavedSearch
+import com.shinku.reader.domain.source.model.SavedSearch
+import com.shinku.reader.domain.source.repository.SourcePagingSource
+import com.shinku.reader.domain.source.service.SourceManager
 import com.shinku.reader.domain.source.service.SourcePreferences
 import com.shinku.reader.domain.track.interactor.AddTracks
 import com.shinku.reader.domain.ui.UiPreferences
+import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
+import com.shinku.reader.exh.source.ExhPreferences
+import com.shinku.reader.exh.source.ShinKuPreferences
+import com.shinku.reader.exh.source.getMainSource
+import com.shinku.reader.exh.source.mangaDexSourceIds
+import com.shinku.reader.i18n.sy.SYMR
 import com.shinku.reader.presentation.util.ioCoroutineScope
-import com.shinku.reader.data.cache.CoverCache
+import com.shinku.reader.ui.browse.BrowseSelectionState
+import com.shinku.reader.ui.browse.BulkAddFavoritesHelper
+import com.shinku.reader.ui.browse.BulkAddPreparation
+import com.shinku.reader.ui.browse.BulkFavoriteSummary
+import com.shinku.reader.util.removeCovers
+import dev.icerock.moko.resources.StringResource
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.online.MetadataSource
 import eu.kanade.tachiyomi.source.online.all.MangaDex
-import com.shinku.reader.util.removeCovers
-import com.shinku.reader.exh.metadata.metadata.RaisedSearchMetadata
-import com.shinku.reader.exh.source.ExhPreferences
-import com.shinku.reader.exh.source.getMainSource
-import com.shinku.reader.exh.source.mangaDexSourceIds
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -45,38 +76,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import com.shinku.reader.core.common.preference.CheckboxState
-import com.shinku.reader.core.common.preference.mapAsCheckboxState
-import com.shinku.reader.core.common.util.lang.launchIO
-import com.shinku.reader.core.common.util.lang.launchNonCancellable
-import com.shinku.reader.core.common.util.lang.withUIContext
-import com.shinku.reader.domain.category.interactor.GetCategories
-import com.shinku.reader.domain.category.interactor.SetMangaCategories
-import com.shinku.reader.domain.manga.interactor.GroupManga
-import com.shinku.reader.exh.source.ShinKuPreferences
-import com.shinku.reader.domain.category.model.Category
-import com.shinku.reader.domain.chapter.interactor.SetMangaDefaultChapterFlags
-import com.shinku.reader.domain.library.service.LibraryPreferences
-import com.shinku.reader.domain.manga.interactor.GetDuplicateLibraryManga
-import com.shinku.reader.domain.manga.interactor.GetFlatMetadataById
-import com.shinku.reader.domain.manga.interactor.GetManga
-import com.shinku.reader.domain.manga.model.Manga
-import com.shinku.reader.domain.manga.model.MangaWithChapterCount
-import com.shinku.reader.domain.manga.model.toMangaUpdate
-import com.shinku.reader.domain.source.interactor.DeleteSavedSearchById
-import com.shinku.reader.domain.source.interactor.GetRemoteManga
-import com.shinku.reader.domain.source.interactor.InsertSavedSearch
-import com.shinku.reader.domain.source.model.EXHSavedSearch
-import com.shinku.reader.domain.source.model.SavedSearch
-import com.shinku.reader.domain.source.repository.SourcePagingSource
-import com.shinku.reader.domain.source.service.SourceManager
-import com.shinku.reader.i18n.sy.SYMR
 import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import xyz.nulldev.ts.api.http.serializer.FilterSerializer
@@ -129,6 +135,22 @@ open class BrowseSourceScreenModel(
 
     val sourceIsMangaDex = sourceId in mangaDexSourceIds
     // SY <--
+
+    private val _bulkFavoriteEvents = Channel<BulkFavoriteSummary>(Channel.BUFFERED)
+    val bulkFavoriteEvents = _bulkFavoriteEvents.receiveAsFlow()
+
+    private val bulkAddHelper by lazy {
+        BulkAddFavoritesHelper(
+            libraryPreferences = libraryPreferences,
+            getCategories = getCategories,
+            setMangaCategories = setMangaCategories,
+            setMangaDefaultChapterFlags = setMangaDefaultChapterFlags,
+            addTracks = addTracks,
+            updateManga = updateManga,
+            getDuplicateLibraryManga = getDuplicateLibraryManga,
+            shinkuPreferences = shinkuPreferences,
+        )
+    }
 
     init {
         if (source is CatalogueSource) {
@@ -444,6 +466,64 @@ open class BrowseSourceScreenModel(
         mutableState.update { it.copy(toolbarQuery = query) }
     }
 
+    fun enterSelectionMode() {
+        mutableState.update { it.copy(selection = it.selection.enterSelectionMode()) }
+    }
+
+    fun exitSelectionMode() {
+        mutableState.update { it.copy(selection = it.selection.exitSelectionMode()) }
+    }
+
+    fun toggleSelection(manga: Manga) {
+        mutableState.update { it.copy(selection = it.selection.toggle(manga)) }
+    }
+
+    fun selectAllLoaded(loaded: List<Manga>) {
+        mutableState.update { it.copy(selection = it.selection.selectAllLoaded(loaded)) }
+    }
+
+    fun invertLoaded(loaded: List<Manga>) {
+        mutableState.update { it.copy(selection = it.selection.invertLoaded(loaded)) }
+    }
+
+    fun requestBulkAddToLibrary() {
+        val selected = state.value.selection.selectedManga
+        if (selected.isEmpty()) return
+        screenModelScope.launchIO {
+            when (val prep = bulkAddHelper.prepareCategories()) {
+                is BulkAddPreparation.Ready -> {
+                    executeBulkAdd(selected, prep.categoryIds)
+                }
+                is BulkAddPreparation.NeedsCategoryChoice -> {
+                    setDialog(
+                        Dialog.BulkChangeMangaCategory(
+                            mangas = selected,
+                            initialSelection = prep.categories
+                                .mapAsCheckboxState { false }
+                                .toImmutableList(),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    fun confirmBulkAddToLibrary(mangas: List<Manga>, categoryIds: List<Long>) {
+        screenModelScope.launchIO {
+            executeBulkAdd(mangas, categoryIds)
+        }
+    }
+
+    private suspend fun executeBulkAdd(mangas: List<Manga>, categoryIds: List<Long>) {
+        val summary = bulkAddHelper.addFavorites(
+            mangas = mangas,
+            categoryIds = categoryIds,
+            sourceProvider = { sourceManager.getOrStub(it) },
+        )
+        exitSelectionMode()
+        _bulkFavoriteEvents.send(summary)
+    }
+
     sealed class Listing(open val query: String?, open val filters: FilterList) {
         data object Popular : Listing(query = GetRemoteManga.QUERY_POPULAR, filters = FilterList())
         data object Latest : Listing(query = GetRemoteManga.QUERY_LATEST, filters = FilterList())
@@ -471,6 +551,10 @@ open class BrowseSourceScreenModel(
             val manga: Manga,
             val initialSelection: ImmutableList<CheckboxState.State<Category>>,
         ) : Dialog
+        data class BulkChangeMangaCategory(
+            val mangas: List<Manga>,
+            val initialSelection: ImmutableList<CheckboxState.State<Category>>,
+        ) : Dialog
         data class Migrate(val target: Manga, val current: Manga) : Dialog
 
         // SY -->
@@ -485,6 +569,7 @@ open class BrowseSourceScreenModel(
         val filters: FilterList = FilterList(),
         val toolbarQuery: String? = null,
         val dialog: Dialog? = null,
+        val selection: BrowseSelectionState = BrowseSelectionState(),
         // SY -->
         val savedSearches: ImmutableList<EXHSavedSearch> = persistentListOf(),
         val filterable: Boolean = true,

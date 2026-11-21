@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.DoneAll
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.PushPin
@@ -26,11 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.shinku.reader.presentation.components.SearchToolbar
-import com.shinku.reader.ui.browse.source.globalsearch.SourceFilter
 import com.shinku.reader.i18n.MR
+import com.shinku.reader.presentation.components.SearchToolbar
 import com.shinku.reader.presentation.core.components.material.padding
 import com.shinku.reader.presentation.core.i18n.stringResource
+import com.shinku.reader.ui.browse.source.globalsearch.SourceFilter
 
 @Composable
 fun GlobalSearchToolbar(
@@ -47,6 +48,7 @@ fun GlobalSearchToolbar(
     onlyShowHasResults: Boolean,
     onToggleResults: () -> Unit,
     scrollBehavior: TopAppBarScrollBehavior,
+    onEnterSelectionMode: (() -> Unit)? = null,
 ) {
     SearchToolbar(
         modifier = Modifier.background(MaterialTheme.colorScheme.surface),
@@ -121,6 +123,23 @@ fun GlobalSearchToolbar(
                             Text(text = stringResource(MR.strings.has_results))
                         },
                     )
+
+                    if (onEnterSelectionMode != null) {
+                        FilterChip(
+                            selected = false,
+                            onClick = onEnterSelectionMode,
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Checklist,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                                )
+                            },
+                            label = {
+                                Text(text = "Select")
+                            },
+                        )
+                    }
                 }
 
                 HorizontalDivider()

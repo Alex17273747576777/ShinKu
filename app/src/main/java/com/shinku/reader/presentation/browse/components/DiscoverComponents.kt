@@ -255,6 +255,7 @@ fun DiscoverMangaRow(
     mangas: List<Manga>,
     onClickManga: (Manga) -> Unit,
     onLongClickManga: ((Manga) -> Unit)? = null,
+    isSelected: (Manga) -> Boolean = { false },
     getMangaState: (@Composable (Manga) -> State<Manga>)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -267,9 +268,10 @@ fun DiscoverMangaRow(
         contentPadding = PaddingValues(horizontal = MaterialTheme.padding.medium),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        items(mangas, key = { it.id }) { manga ->
+        items(mangas, key = { "${it.source}-${it.url}-${it.id}" }) { manga ->
             DiscoverMangaCard(
                 manga = manga,
+                isSelected = isSelected(manga),
                 onClick = { onClickManga(manga) },
                 onLongClick = onLongClickManga?.let { { it(manga) } },
                 getMangaState = getMangaState,
@@ -282,6 +284,7 @@ fun DiscoverMangaRow(
 @Composable
 private fun DiscoverMangaCard(
     manga: Manga,
+    isSelected: Boolean = false,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     getMangaState: (@Composable (Manga) -> State<Manga>)? = null,
@@ -316,7 +319,11 @@ private fun DiscoverMangaCard(
             Surface(
                 shape = SanctuaryShapes.coverLarge,
                 shadowElevation = SanctuaryElevation.compact,
-                border = SanctuaryBrushes.subtleBorder(),
+                border = if (isSelected) {
+                    androidx.compose.foundation.BorderStroke(3.dp, MaterialTheme.colorScheme.secondary)
+                } else {
+                    SanctuaryBrushes.subtleBorder()
+                },
                 modifier = Modifier.fillMaxSize(),
             ) {
                 MangaCover.Book(
@@ -325,7 +332,13 @@ private fun DiscoverMangaCard(
                     shape = SanctuaryShapes.coverLarge,
                     modifier = Modifier
                         .fillMaxSize()
-                        .alpha(if (currentManga.favorite) CommonMangaItemDefaults.BrowseFavoriteCoverAlpha else 1f),
+                        .alpha(
+                            when {
+                                isSelected -> 0.7f
+                                currentManga.favorite -> CommonMangaItemDefaults.BrowseFavoriteCoverAlpha
+                                else -> 1f
+                            },
+                        ),
                 )
             }
 

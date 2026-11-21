@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,9 +21,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowForwardIos
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.FlipToBack
+import androidx.compose.material.icons.outlined.LibraryAdd
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,6 +41,7 @@ import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,11 +54,8 @@ import com.shinku.reader.presentation.browse.components.DiscoverFeaturedCarousel
 import com.shinku.reader.presentation.browse.components.DiscoverFeedSkeleton
 import com.shinku.reader.presentation.browse.components.DiscoverGenreCloud
 import com.shinku.reader.presentation.browse.components.DiscoverMangaRow
-import androidx.compose.foundation.layout.calculateEndPadding
-import androidx.compose.foundation.layout.calculateStartPadding
-import androidx.compose.ui.platform.LocalLayoutDirection
-import com.shinku.reader.presentation.browse.components.FeedCategoryTabs
 import com.shinku.reader.presentation.browse.components.DiscoverSectionHeader
+import com.shinku.reader.presentation.browse.components.FeedCategoryTabs
 import com.shinku.reader.presentation.browse.components.FeedSourceFailures
 import com.shinku.reader.presentation.browse.components.GlobalSearchCardRow
 import com.shinku.reader.presentation.browse.components.GlobalSearchErrorResultItem
@@ -90,6 +94,11 @@ fun FeedScreen(
     onClickSource: (CatalogueSource) -> Unit,
     onClickDelete: (FeedSavedSearch) -> Unit,
     onClickManga: (Manga) -> Unit,
+    onLongClickManga: (Manga) -> Unit = onClickManga,
+    onCancelSelectionMode: () -> Unit = {},
+    onSelectAllLoaded: () -> Unit = {},
+    onInvertLoaded: () -> Unit = {},
+    onAddSelectedToLibrary: () -> Unit = {},
     onClickGenre: (String) -> Unit = {},
     onSeeAllGenre: (String) -> Unit = {},
     onSeeAllTitles: (String, List<Manga>, String, String) -> Unit = { _, _, _, _ -> },
@@ -101,7 +110,7 @@ fun FeedScreen(
     val layoutDirection = LocalLayoutDirection.current
     val topPadding = contentPadding.calculateTopPadding()
     val hasTabs = state.categories.size > 1
-    val innerPadding = if (hasTabs) {
+    val innerPadding = if (hasTabs || state.selection.selectionMode) {
         PaddingValues(
             start = contentPadding.calculateStartPadding(layoutDirection),
             end = contentPadding.calculateEndPadding(layoutDirection),
@@ -115,8 +124,58 @@ fun FeedScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(top = if (hasTabs) topPadding else 0.dp),
+            .padding(top = if (hasTabs || state.selection.selectionMode) topPadding else 0.dp),
     ) {
+        if (state.selection.selectionMode) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onCancelSelectionMode) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = stringResource(MR.strings.action_cancel),
+                            )
+                        }
+                        Text(
+                            text = "${state.selection.selectedCount} selected",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onSelectAllLoaded) {
+                            Icon(
+                                imageVector = Icons.Outlined.SelectAll,
+                                contentDescription = stringResource(MR.strings.action_select_all),
+                            )
+                        }
+                        IconButton(onClick = onInvertLoaded) {
+                            Icon(
+                                imageVector = Icons.Outlined.FlipToBack,
+                                contentDescription = stringResource(MR.strings.action_select_inverse),
+                            )
+                        }
+                        IconButton(
+                            onClick = onAddSelectedToLibrary,
+                            enabled = state.selection.selectedCount > 0,
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.LibraryAdd,
+                                contentDescription = stringResource(MR.strings.add_to_library),
+                            )
+                        }
+                    }
+                }
+            }
+        }
         if (hasTabs) {
             FeedCategoryTabs(
                 categories = state.categories,
@@ -190,184 +249,147 @@ fun FeedScreen(
                                 )
                             }
 
-                    // 3. Dynamic Selected Genre Section (When user taps any genre chip)
-                    if (state.selectedGenre != null) {
-                        item {
-                            val hasGenreManga = !state.selectedGenreManga.isNullOrEmpty()
-                            DiscoverSectionHeader(
-                                title = "Top ${state.selectedGenre} Titles",
-                                subtitle = "Filtered across active sources",
-                                onSeeAllClick = if (hasGenreManga) {
-                                    {
-                                        onSeeAllTitles(
-                                            "Top ${state.selectedGenre} Titles",
-                                            state.selectedGenreManga.orEmpty(),
-                                            "genre",
-                                            state.selectedGenre.orEmpty(),
-                                        )
-                                    }
-                                } else {
-                                    null
-                                },
-                                onClearClick = { onClickGenre(state.selectedGenre.orEmpty()) },
-                            )
-                            if (state.isLoadingGenre) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(140.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
-                            } else if (hasGenreManga) {
-                                DiscoverMangaRow(
-                                    mangas = state.selectedGenreManga.orEmpty(),
-                                    onClickManga = onClickManga,
-                                    getMangaState = getMangaState,
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 20.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        text = "No titles found for \"${state.selectedGenre}\" in active sources",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // 4. Titles For You Section (Personalized based on reading behavior & new releases)
-                    if (state.forYouManga.isNotEmpty()) {
-                        item {
-                            DiscoverSectionHeader(
-                                title = "Titles For You",
-                                subtitle = "Based on your reading genres",
-                                onSeeAllClick = {
-                                    onSeeAllTitles("Titles For You", state.forYouManga, "for_you", "")
-                                },
-                            )
-                            DiscoverMangaRow(
-                                mangas = state.forYouManga,
-                                onClickManga = onClickManga,
-                                getMangaState = getMangaState,
-                            )
-                        }
-                    }
-
-                    // 5. AI Sanctuary Picks (When an AI provider is configured)
-                    if (!state.recommendations.isNullOrEmpty()) {
-                        item {
-                            DiscoverSectionHeader(
-                                title = "AI Sanctuary Picks",
-                                subtitle = "Personalized recommendations from your library",
-                                onSeeAllClick = {
-                                    onSeeAllTitles(
-                                        "AI Sanctuary Picks",
-                                        state.recommendations.orEmpty(),
-                                        "recommendations",
-                                        "",
-                                    )
-                                },
-                            )
-                            DiscoverMangaRow(
-                                mangas = state.recommendations,
-                                onClickManga = onClickManga,
-                                getMangaState = getMangaState,
-                            )
-                        }
-                    }
-
-                    // 6. Curated Genre Highlights across Healthy Extensions
-                    state.genreSections.forEach { (genreTitle, mangas) ->
-                        if (mangas.isNotEmpty()) {
-                            item(key = "genre_$genreTitle") {
-                                DiscoverSectionHeader(
-                                    title = "$genreTitle Highlights",
-                                    subtitle = "New chapters and popular picks in $genreTitle",
-                                    onSeeAllClick = {
-                                        onSeeAllTitles("$genreTitle Highlights", mangas, "genre", genreTitle)
-                                    },
-                                )
-                                DiscoverMangaRow(
-                                    mangas = mangas,
-                                    onClickManga = onClickManga,
-                                    getMangaState = getMangaState,
-                                )
-                            }
-                        }
-                    }
-                    }
-
-                    // 7. Custom Feeds & Saved Searches
-                    if (state.showSourceFeeds && !state.items.isNullOrEmpty()) {
-                        items(
-                            state.items.orEmpty(),
-                            key = { it.feed.id },
-                        ) { item ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
-                                            if (item.savedSearch != null && item.source != null) {
-                                                onClickSavedSearch(item.savedSearch, item.source)
-                                            } else if (item.source != null) {
-                                                onClickSource(item.source)
+                            // 3. Dynamic Selected Genre Section (When user taps any genre chip)
+                            if (state.selectedGenre != null) {
+                                item {
+                                    val hasGenreManga = !state.selectedGenreManga.isNullOrEmpty()
+                                    DiscoverSectionHeader(
+                                        title = "Top ${state.selectedGenre} Titles",
+                                        subtitle = "Filtered across active sources",
+                                        onSeeAllClick = if (hasGenreManga) {
+                                            {
+                                                onSeeAllTitles(
+                                                    "Top ${state.selectedGenre} Titles",
+                                                    state.selectedGenreManga.orEmpty(),
+                                                    "genre",
+                                                    state.selectedGenre.orEmpty(),
+                                                )
                                             }
+                                        } else {
+                                            null
                                         },
-                                ) {
-                                    Text(
-                                        text = item.title,
-                                        style = MaterialTheme.typography.titleLarge.copy(
-                                            fontWeight = FontWeight.ExtraBold,
-                                        ),
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
+                                        onClearClick = { onClickGenre(state.selectedGenre.orEmpty()) },
                                     )
-                                    if (item.subtitle.isNotBlank()) {
-                                        Text(
-                                            text = item.subtitle,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
+                                    if (state.isLoadingGenre) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(140.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            CircularProgressIndicator(
+                                                modifier = Modifier.size(28.dp),
+                                            )
+                                        }
+                                    } else if (hasGenreManga) {
+                                        DiscoverMangaRow(
+                                            mangas = state.selectedGenreManga.orEmpty(),
+                                            onClickManga = onClickManga,
+                                            onLongClickManga = onLongClickManga,
+                                            isSelected = state.selection::isSelected,
+                                            getMangaState = getMangaState,
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 16.dp, vertical = 20.dp),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                text = "No titles found for \"${state.selectedGenre}\" in active sources",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. Titles For You Section (Personalized based on reading behavior & new releases)
+                            if (state.forYouManga.isNotEmpty()) {
+                                item {
+                                    DiscoverSectionHeader(
+                                        title = "Titles For You",
+                                        subtitle = "Based on your reading genres",
+                                        onSeeAllClick = {
+                                            onSeeAllTitles("Titles For You", state.forYouManga, "for_you", "")
+                                        },
+                                    )
+                                    DiscoverMangaRow(
+                                        mangas = state.forYouManga,
+                                        onClickManga = onClickManga,
+                                        onLongClickManga = onLongClickManga,
+                                        isSelected = state.selection::isSelected,
+                                        getMangaState = getMangaState,
+                                    )
+                                }
+                            }
+
+                            // 5. AI Sanctuary Picks (When an AI provider is configured)
+                            if (!state.recommendations.isNullOrEmpty()) {
+                                item {
+                                    DiscoverSectionHeader(
+                                        title = "AI Sanctuary Picks",
+                                        subtitle = "Personalized recommendations from your library",
+                                        onSeeAllClick = {
+                                            onSeeAllTitles(
+                                                "AI Sanctuary Picks",
+                                                state.recommendations.orEmpty(),
+                                                "recommendations",
+                                                "",
+                                            )
+                                        },
+                                    )
+                                    DiscoverMangaRow(
+                                        mangas = state.recommendations,
+                                        onClickManga = onClickManga,
+                                        onLongClickManga = onLongClickManga,
+                                        isSelected = state.selection::isSelected,
+                                        getMangaState = getMangaState,
+                                    )
+                                }
+                            }
+
+                            // 6. Curated Genre Highlights across Healthy Extensions
+                            state.genreSections.forEach { (genreTitle, mangas) ->
+                                if (mangas.isNotEmpty()) {
+                                    item(key = "genre_$genreTitle") {
+                                        DiscoverSectionHeader(
+                                            title = "$genreTitle Highlights",
+                                            subtitle = "New chapters and popular picks in $genreTitle",
+                                            onSeeAllClick = {
+                                                onSeeAllTitles("$genreTitle Highlights", mangas, "genre", genreTitle)
+                                            },
+                                        )
+                                        DiscoverMangaRow(
+                                            mangas = mangas,
+                                            onClickManga = onClickManga,
+                                            onLongClickManga = onLongClickManga,
+                                            isSelected = state.selection::isSelected,
+                                            getMangaState = getMangaState,
                                         )
                                     }
                                 }
+                            }
+                        }
 
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(
-                                        onClick = { onClickDelete(item.feed) },
-                                        modifier = Modifier.size(48.dp),
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Delete,
-                                            contentDescription = stringResource(MR.strings.action_delete),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                            modifier = Modifier.size(18.dp),
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
+                        // 7. Custom Feeds & Saved Searches
+                        if (state.showSourceFeeds && !state.items.isNullOrEmpty()) {
+                            items(
+                                state.items.orEmpty(),
+                                key = { it.feed.id },
+                            ) { item ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Column(
                                         modifier = Modifier
+                                            .weight(1f)
                                             .clip(RoundedCornerShape(8.dp))
                                             .clickable {
                                                 if (item.savedSearch != null && item.source != null) {
@@ -375,90 +397,138 @@ fun FeedScreen(
                                                 } else if (item.source != null) {
                                                     onClickSource(item.source)
                                                 }
-                                            }
-                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                            },
                                     ) {
                                         Text(
-                                            text = "See",
-                                            style = MaterialTheme.typography.labelLarge.copy(
-                                                fontWeight = FontWeight.Bold,
+                                            text = item.title,
+                                            style = MaterialTheme.typography.titleLarge.copy(
+                                                fontWeight = FontWeight.ExtraBold,
                                             ),
-                                            color = MaterialTheme.colorScheme.primary,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
-                                        Spacer(modifier = Modifier.width(3.dp))
+                                        if (item.subtitle.isNotBlank()) {
+                                            Text(
+                                                text = item.subtitle,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        IconButton(
+                                            onClick = { onClickDelete(item.feed) },
+                                            modifier = Modifier.size(48.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Delete,
+                                                contentDescription = stringResource(MR.strings.action_delete),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                modifier = Modifier.size(18.dp),
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .clickable {
+                                                    if (item.savedSearch != null && item.source != null) {
+                                                        onClickSavedSearch(item.savedSearch, item.source)
+                                                    } else if (item.source != null) {
+                                                        onClickSource(item.source)
+                                                    }
+                                                }
+                                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                                        ) {
+                                            Text(
+                                                text = "See",
+                                                style = MaterialTheme.typography.labelLarge.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                ),
+                                                color = MaterialTheme.colorScheme.primary,
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(12.dp),
+                                            )
+                                        }
+                                    }
+                                }
+                                FeedItem(
+                                    item = item,
+                                    getMangaState = { getMangaState(it) },
+                                    onClickManga = onClickManga,
+                                    onLongClickManga = onLongClickManga,
+                                    isSelected = state.selection::isSelected,
+                                )
+                            }
+                        }
+
+                        // 8. Add Source Feed Card
+                        if (state.showSourceFeeds) {
+                            item {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Surface(
+                                    shape = SanctuaryShapes.deckCard,
+                                    color = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                                    border = SanctuaryBrushes.subtleBorder(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                                        .clip(SanctuaryShapes.deckCard)
+                                        .clickable { onAddFeed() },
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(SanctuaryShapes.medium)
+                                                .background(MaterialTheme.colorScheme.primaryContainer),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Add,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(14.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "Add Source Feed",
+                                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                            )
+                                            Text(
+                                                text = "Pin a source or saved search to your feed",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            )
+                                        }
                                         Icon(
                                             imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
                                             contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(12.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                            modifier = Modifier.size(14.dp),
                                         )
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(16.dp))
                             }
-                            FeedItem(
-                                item = item,
-                                getMangaState = { getMangaState(it) },
-                                onClickManga = onClickManga,
-                            )
-                        }
-                    }
-
-                    // 8. Add Source Feed Card
-                    if (state.showSourceFeeds) {
-                        item {
-                            Spacer(modifier = Modifier.height(10.dp))
-                            Surface(
-                                shape = SanctuaryShapes.deckCard,
-                                color = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
-                                border = SanctuaryBrushes.subtleBorder(),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                                    .clip(SanctuaryShapes.deckCard)
-                                    .clickable { onAddFeed() },
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(SanctuaryShapes.medium)
-                                            .background(MaterialTheme.colorScheme.primaryContainer),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Add,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(14.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "Add Source Feed",
-                                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                        )
-                                        Text(
-                                            text = "Pin a source or saved search to your feed",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Outlined.ArrowForwardIos,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                        modifier = Modifier.size(14.dp),
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
                         }
                     }
                 }
@@ -466,13 +536,14 @@ fun FeedScreen(
         }
     }
 }
-}
 
 @Composable
 fun FeedItem(
     item: FeedItemUI,
     getMangaState: @Composable ((Manga) -> State<Manga>),
     onClickManga: (Manga) -> Unit,
+    onLongClickManga: (Manga) -> Unit = onClickManga,
+    isSelected: (Manga) -> Boolean = { false },
 ) {
     when {
         item.results == null -> {
@@ -486,7 +557,8 @@ fun FeedItem(
                 titles = item.results,
                 getManga = getMangaState,
                 onClick = onClickManga,
-                onLongClick = onClickManga,
+                onLongClick = onLongClickManga,
+                isSelected = isSelected,
             )
         }
     }

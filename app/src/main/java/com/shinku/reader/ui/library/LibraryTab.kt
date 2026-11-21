@@ -145,9 +145,18 @@ data object LibraryTab : Tab {
                     defaultCategoryTitle = stringResource(MR.strings.label_default),
                     page = state.coercedActiveCategoryIndex,
                 )
+                val visibleIds = state.activeCategory
+                    ?.let { state.getItemsForCategory(it).map { item -> item.id }.toSet() }
+                    .orEmpty()
+                val selectedOutOfViewCount = if (state.selection.isEmpty()) {
+                    0
+                } else {
+                    state.selection.count { it !in visibleIds }
+                }
                 LibraryToolbar(
                     hasActiveFilters = state.hasActiveFilters,
                     selectedCount = state.selection.size,
+                    selectedOutOfViewCount = selectedOutOfViewCount,
                     title = title,
                     onClickUnselectAll = screenModel::clearSelection,
                     onClickSelectAll = screenModel::selectAll,
@@ -174,6 +183,7 @@ data object LibraryTab : Tab {
                             context.toast(SYMR.strings.sync_in_progress)
                         }
                     },
+                    onClickManageEntries = { navigator.push(LibraryManagementScreen()) },
                     // SY -->
                     onClickSyncExh = screenModel::openFavoritesSyncDialog.takeIf { state.showSyncExh },
                     isSyncEnabled = state.isSyncEnabled,
@@ -253,7 +263,7 @@ data object LibraryTab : Tab {
                         }
 
                         val layoutDirection = LocalLayoutDirection.current
-                        val dockBottomPadding = if (!com.shinku.reader.presentation.util.isTabletUi()) 84.dp else 0.dp
+                        val dockBottomPadding = if (!com.shinku.reader.presentation.util.isTabletUi() && !state.selectionMode) 84.dp else 0.dp
                         val libraryContentPadding = PaddingValues(
                             start = contentPadding.calculateStartPadding(layoutDirection),
                             top = contentPadding.calculateTopPadding(),

@@ -30,6 +30,7 @@ import com.shinku.reader.presentation.more.settings.screen.SettingsShinKuSetting
 import com.shinku.reader.presentation.util.Tab
 import com.shinku.reader.ui.download.DownloadQueueScreen
 import com.shinku.reader.ui.history.HistoryTab
+import com.shinku.reader.ui.library.LibraryManagementScreen
 import com.shinku.reader.ui.setting.SettingsScreen
 import com.shinku.reader.ui.stats.StatsScreen
 import com.shinku.reader.ui.updates.UpdatesTab
@@ -91,6 +92,7 @@ data object MoreTab : Tab {
             onClickAbout = { navigator.push(SettingsScreen(SettingsScreen.Destination.About)) },
             onClickUpdates = { navigator.push(UpdatesTab) },
             onClickHistory = { navigator.push(HistoryTab) },
+            onClickLibraryManagement = { navigator.push(LibraryManagementScreen()) },
         )
     }
 }

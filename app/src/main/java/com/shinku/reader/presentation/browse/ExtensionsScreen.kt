@@ -11,21 +11,30 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.GetApp
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -43,6 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,6 +103,9 @@ fun ExtensionScreen(
     onOpenExtension: (Extension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
     onRefresh: () -> Unit,
+    onToggleSelectExtension: (String) -> Unit = {},
+    onCancelSelectionMode: () -> Unit = {},
+    onInstallSelected: () -> Unit = {},
 ) {
     val navigator = LocalNavigator.currentOrThrow
 
@@ -134,6 +147,9 @@ fun ExtensionScreen(
                     onTrustExtension = onTrustExtension,
                     onOpenExtension = onOpenExtension,
                     onClickUpdateAll = onClickUpdateAll,
+                    onToggleSelectExtension = onToggleSelectExtension,
+                    onCancelSelectionMode = onCancelSelectionMode,
+                    onInstallSelected = onInstallSelected,
                 )
             }
         }
@@ -153,9 +169,13 @@ private fun ExtensionContent(
     onTrustExtension: (Extension.Untrusted) -> Unit,
     onOpenExtension: (Extension.Installed) -> Unit,
     onClickUpdateAll: () -> Unit,
+    onToggleSelectExtension: (String) -> Unit,
+    onCancelSelectionMode: () -> Unit,
+    onInstallSelected: () -> Unit,
 ) {
     val context = LocalContext.current
     var trustState by remember { mutableStateOf<Extension.Untrusted?>(null) }
+    var availableInfoState by remember { mutableStateOf<Extension.Available?>(null) }
     val installGranted = rememberRequestPackageInstallsPermissionState(initialValue = true)
     var selectedLang by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -167,150 +187,220 @@ private fun ExtensionContent(
             .distinct()
     }
 
-    FastScrollLazyColumn(
-        contentPadding = contentPadding + topSmallPaddingValues,
-    ) {
-        if (!installGranted && state.installer?.requiresSystemPermission == true) {
-            item(key = "extension-permissions-warning") {
-                WarningBanner(
-                    textRes = MR.strings.ext_permission_install_apps_warning,
-                    modifier = Modifier.clickable {
-                        context.launchRequestPackageInstallsPermission()
-                    },
-                )
-            }
-        }
+    val layoutDirection = LocalLayoutDirection.current
+    val innerPadding = if (state.selectionMode) {
+        PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection),
+            end = contentPadding.calculateEndPadding(layoutDirection),
+            bottom = contentPadding.calculateBottomPadding(),
+            top = 0.dp,
+        )
+    } else {
+        contentPadding
+    }
 
-        if (availableLanguages.size > 1) {
-            item(key = "extensions-language-chips") {
+    Column {
+        if (state.selectionMode) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = contentPadding.calculateTopPadding()),
+            ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(
-                            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                        ),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    androidx.compose.foundation.lazy.LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onCancelSelectionMode) {
+                            Icon(
+                                imageVector = Icons.Outlined.Close,
+                                contentDescription = stringResource(MR.strings.action_cancel),
+                            )
+                        }
+                        Text(
+                            text = "${state.selectedPkgNames.size} selected",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        )
+                    }
+                    Button(
+                        onClick = onInstallSelected,
+                        enabled = state.selectedPkgNames.isNotEmpty(),
                     ) {
-                        item(key = "ext-lang-all") {
-                            ExtensionLanguageChip(
-                                label = stringResource(MR.strings.all),
-                                selected = selectedLang == null,
-                                onClick = { selectedLang = null },
-                            )
-                        }
-                        items(availableLanguages, key = { "ext-lang-$it" }) { lang ->
-                            ExtensionLanguageChip(
-                                label = LocaleHelper.getSourceDisplayName(lang, context),
-                                selected = selectedLang == lang,
-                                onClick = {
-                                    selectedLang = if (selectedLang == lang) null else lang
-                                },
-                            )
-                        }
+                        Text(text = stringResource(MR.strings.ext_install))
                     }
                 }
             }
         }
 
-        state.items.forEach { (header, rawItems) ->
-            val items = if (selectedLang == null) {
-                rawItems
-            } else {
-                rawItems.filter { it.extension.lang.equals(selectedLang, ignoreCase = true) || it.extension.lang == "all" }
+        FastScrollLazyColumn(
+            contentPadding = innerPadding + topSmallPaddingValues,
+        ) {
+            if (!installGranted && state.installer?.requiresSystemPermission == true) {
+                item(key = "extension-permissions-warning") {
+                    WarningBanner(
+                        textRes = MR.strings.ext_permission_install_apps_warning,
+                        modifier = Modifier.clickable {
+                            context.launchRequestPackageInstallsPermission()
+                        },
+                    )
+                }
             }
-            if (items.isEmpty()) return@forEach
 
-            item(
-                contentType = "header",
-                key = "extensionHeader-${header.hashCode()}",
-            ) {
-                when (header) {
-                    is ExtensionUiModel.Header.Resource -> {
-                        val action: @Composable RowScope.() -> Unit =
-                            if (header.textRes == MR.strings.ext_updates_pending) {
-                                {
-                                    Button(onClick = { onClickUpdateAll() }) {
-                                        Text(
-                                            text = stringResource(MR.strings.ext_update_all),
-                                            style = LocalTextStyle.current.copy(
-                                                color = MaterialTheme.colorScheme.onPrimary,
-                                            ),
-                                        )
-                                    }
-                                }
-                            } else {
-                                {}
+            if (availableLanguages.size > 1) {
+                item(key = "extensions-language-chips") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(
+                                Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            ),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.foundation.lazy.LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            item(key = "ext-lang-all") {
+                                ExtensionLanguageChip(
+                                    label = stringResource(MR.strings.all),
+                                    selected = selectedLang == null,
+                                    onClick = { selectedLang = null },
+                                )
                             }
-                        ExtensionHeader(
-                            textRes = header.textRes,
-                            count = items.size,
-                            modifier = Modifier.animateItemFastScroll(),
-                            action = action,
-                        )
-                    }
-                    is ExtensionUiModel.Header.Text -> {
-                        ExtensionHeader(
-                            text = header.text,
-                            count = items.size,
-                            modifier = Modifier.animateItemFastScroll(),
-                        )
+                            items(availableLanguages, key = { "ext-lang-$it" }) { lang ->
+                                ExtensionLanguageChip(
+                                    label = LocaleHelper.getSourceDisplayName(lang, context),
+                                    selected = selectedLang == lang,
+                                    onClick = {
+                                        selectedLang = if (selectedLang == lang) null else lang
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
 
-            items(
-                items = items,
-                contentType = { "item" },
-                key = { item ->
-                    when (item.extension) {
-                        is Extension.Untrusted -> "extension-untrusted-${item.hashCode()}"
-                        is Extension.Installed -> "extension-installed-${item.hashCode()}"
-                        is Extension.Available -> "extension-available-${item.hashCode()}"
-                    }
-                },
-            ) { item ->
-                ExtensionItem(
-                    modifier = Modifier.animateItemFastScroll(),
-                    item = item,
-                    onClickItem = {
-                        when (it) {
-                            is Extension.Available -> onInstallExtension(it)
-                            is Extension.Installed -> onOpenExtension(it)
-                            is Extension.Untrusted -> {
-                                trustState = it
-                            }
-                        }
-                    },
-                    onLongClickItem = onLongClickItem,
-                    onClickItemSecondaryAction = {
-                        when (it) {
-                            is Extension.Available -> onOpenWebView(it)
-                            is Extension.Installed -> onOpenExtension(it)
-                            else -> {}
-                        }
-                    },
-                    onClickItemCancel = onClickItemCancel,
-                    onClickItemAction = {
-                        when (it) {
-                            is Extension.Available -> onInstallExtension(it)
-                            is Extension.Installed -> {
-                                if (it.hasUpdate) {
-                                    onUpdateExtension(it)
+            state.items.forEach { (header, rawItems) ->
+                val items = if (selectedLang == null) {
+                    rawItems
+                } else {
+                    rawItems.filter { it.extension.lang.equals(selectedLang, ignoreCase = true) || it.extension.lang == "all" }
+                }
+                if (items.isEmpty()) return@forEach
+
+                item(
+                    contentType = "header",
+                    key = "extensionHeader-${header.hashCode()}",
+                ) {
+                    when (header) {
+                        is ExtensionUiModel.Header.Resource -> {
+                            val action: @Composable RowScope.() -> Unit =
+                                if (header.textRes == MR.strings.ext_updates_pending) {
+                                    {
+                                        Button(onClick = { onClickUpdateAll() }) {
+                                            Text(
+                                                text = stringResource(MR.strings.ext_update_all),
+                                                style = LocalTextStyle.current.copy(
+                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                ),
+                                            )
+                                        }
+                                    }
                                 } else {
-                                    onOpenExtension(it)
+                                    {}
+                                }
+                            ExtensionHeader(
+                                textRes = header.textRes,
+                                count = items.size,
+                                modifier = Modifier.animateItemFastScroll(),
+                                action = action,
+                            )
+                        }
+                        is ExtensionUiModel.Header.Text -> {
+                            ExtensionHeader(
+                                text = header.text,
+                                count = items.size,
+                                modifier = Modifier.animateItemFastScroll(),
+                            )
+                        }
+                    }
+                }
+
+                items(
+                    items = items,
+                    contentType = { "item" },
+                    key = { item ->
+                        when (item.extension) {
+                            is Extension.Untrusted -> "extension-untrusted-${item.hashCode()}"
+                            is Extension.Installed -> "extension-installed-${item.hashCode()}"
+                            is Extension.Available -> "extension-available-${item.hashCode()}"
+                        }
+                    },
+                ) { item ->
+                    val isSelectable = item.extension is Extension.Available ||
+                        (item.extension is Extension.Installed && item.extension.hasUpdate)
+                    val isSelected = state.selectionMode && item.extension.pkgName in state.selectedPkgNames
+                    ExtensionItem(
+                        modifier = Modifier.animateItemFastScroll(),
+                        item = item,
+                        selectionMode = state.selectionMode && isSelectable,
+                        isSelected = isSelected,
+                        onClickItem = {
+                            if (state.selectionMode && isSelectable) {
+                                onToggleSelectExtension(it.pkgName)
+                            } else {
+                                when (it) {
+                                    is Extension.Available -> onInstallExtension(it)
+                                    is Extension.Installed -> onOpenExtension(it)
+                                    is Extension.Untrusted -> {
+                                        trustState = it
+                                    }
                                 }
                             }
-                            is Extension.Untrusted -> {
-                                trustState = it
+                        },
+                        onLongClickItem = { ext ->
+                            if (isSelectable) {
+                                onToggleSelectExtension(ext.pkgName)
+                            } else {
+                                onLongClickItem(ext)
                             }
-                        }
-                    },
-                )
+                        },
+                        onClickItemSecondaryAction = {
+                            when (it) {
+                                is Extension.Available -> onOpenWebView(it)
+                                is Extension.Installed -> onOpenExtension(it)
+                                else -> {}
+                            }
+                        },
+                        onClickInfo = { ext ->
+                            if (ext is Extension.Available) {
+                                availableInfoState = ext
+                            }
+                        },
+                        onClickItemCancel = onClickItemCancel,
+                        onClickItemAction = {
+                            when (it) {
+                                is Extension.Available -> onInstallExtension(it)
+                                is Extension.Installed -> {
+                                    if (it.hasUpdate) {
+                                        onUpdateExtension(it)
+                                    } else {
+                                        onOpenExtension(it)
+                                    }
+                                }
+                                is Extension.Untrusted -> {
+                                    trustState = it
+                                }
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -329,21 +419,41 @@ private fun ExtensionContent(
             },
         )
     }
+    availableInfoState?.let { availableExt ->
+        AvailableExtensionInfoDialog(
+            extension = availableExt,
+            onInstall = {
+                onInstallExtension(availableExt)
+                availableInfoState = null
+            },
+            onDismissRequest = { availableInfoState = null },
+        )
+    }
 }
 
 @Composable
 private fun ExtensionItem(
     item: ExtensionUiModel.Item,
+    selectionMode: Boolean = false,
+    isSelected: Boolean = false,
     onClickItem: (Extension) -> Unit,
     onLongClickItem: (Extension) -> Unit,
     onClickItemCancel: (Extension) -> Unit,
     onClickItemAction: (Extension) -> Unit,
     onClickItemSecondaryAction: (Extension) -> Unit,
+    onClickInfo: (Extension) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val (extension, installStep) = item
     BaseBrowseItem(
         modifier = modifier
+            .then(
+                if (isSelected) {
+                    Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f))
+                } else {
+                    Modifier
+                },
+            )
             .combinedClickable(
                 onClick = { onClickItem(extension) },
                 onLongClick = { onLongClickItem(extension) },
@@ -351,26 +461,34 @@ private fun ExtensionItem(
         onClickItem = { onClickItem(extension) },
         onLongClickItem = { onLongClickItem(extension) },
         icon = {
-            Box(
-                modifier = Modifier
-                    .size(40.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                val idle = installStep.isCompleted()
-                if (!idle) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(40.dp),
-                        strokeWidth = 2.dp,
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = { onClickItem(extension) },
                     )
                 }
-
-                val padding by animateDpAsState(targetValue = if (idle) 0.dp else 8.dp)
-                ExtensionIcon(
-                    extension = extension,
+                Box(
                     modifier = Modifier
-                        .matchParentSize()
-                        .padding(padding),
-                )
+                        .size(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val idle = installStep.isCompleted()
+                    if (!idle) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(40.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+
+                    val padding by animateDpAsState(targetValue = if (idle) 0.dp else 8.dp)
+                    ExtensionIcon(
+                        extension = extension,
+                        modifier = Modifier
+                            .matchParentSize()
+                            .padding(padding),
+                    )
+                }
             }
         },
         action = {
@@ -380,6 +498,7 @@ private fun ExtensionItem(
                 onClickItemCancel = onClickItemCancel,
                 onClickItemAction = onClickItemAction,
                 onClickItemSecondaryAction = onClickItemSecondaryAction,
+                onClickInfo = onClickInfo,
             )
         },
     ) {
@@ -489,6 +608,7 @@ private fun ExtensionItemActions(
     onClickItemCancel: (Extension) -> Unit = {},
     onClickItemAction: (Extension) -> Unit = {},
     onClickItemSecondaryAction: (Extension) -> Unit = {},
+    onClickInfo: (Extension) -> Unit = {},
 ) {
     val isIdle = installStep.isCompleted()
 
@@ -621,6 +741,17 @@ private fun ExtensionItemActions(
                             }
                         }
 
+                        IconButton(
+                            onClick = { onClickInfo(extension) },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Info,
+                                contentDescription = "Details",
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+
                         if (extension.sources.isNotEmpty()) {
                             IconButton(
                                 onClick = { onClickItemSecondaryAction(extension) },
@@ -738,6 +869,85 @@ private fun ExtensionTrustDialog(
         dismissButton = {
             TextButton(onClick = onClickDismiss) {
                 Text(text = stringResource(MR.strings.ext_uninstall))
+            }
+        },
+        onDismissRequest = onDismissRequest,
+    )
+}
+
+@Composable
+private fun AvailableExtensionInfoDialog(
+    extension: Extension.Available,
+    onInstall: () -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    val context = LocalContext.current
+    AlertDialog(
+        title = {
+            Text(
+                text = extension.name,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = "Package: ${extension.pkgName}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = "Version: v${extension.versionName.removePrefix("v")} (${extension.versionCode})",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Text(
+                    text = "Language: ${LocaleHelper.getSourceDisplayName(extension.lang, context)}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                if (extension.isNsfw) {
+                    Text(
+                        text = stringResource(MR.strings.ext_nsfw_short),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (extension.repoUrl.isNotBlank()) {
+                    Text(
+                        text = "Repository: ${extension.repoUrl}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (extension.sources.isNotEmpty()) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text(
+                        text = "Included sources (${extension.sources.size}):",
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    extension.sources.forEach { source ->
+                        Text(
+                            text = "• ${source.name} (${source.lang}) — ${source.baseUrl}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onInstall) {
+                Text(text = stringResource(MR.strings.ext_install))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = stringResource(MR.strings.action_cancel))
             }
         },
         onDismissRequest = onDismissRequest,

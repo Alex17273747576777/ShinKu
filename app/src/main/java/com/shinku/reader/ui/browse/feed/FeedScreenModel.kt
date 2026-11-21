@@ -6,11 +6,19 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.util.fastAny
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
+import com.shinku.reader.core.common.preference.CheckboxState
+import com.shinku.reader.core.common.preference.mapAsCheckboxState
 import com.shinku.reader.core.common.util.lang.launchIO
 import com.shinku.reader.core.common.util.lang.launchNonCancellable
 import com.shinku.reader.core.common.util.lang.withIOContext
 import com.shinku.reader.core.common.util.system.logcat
+import com.shinku.reader.domain.category.interactor.GetCategories
+import com.shinku.reader.domain.category.interactor.SetMangaCategories
+import com.shinku.reader.domain.category.model.Category
+import com.shinku.reader.domain.chapter.interactor.SetMangaDefaultChapterFlags
 import com.shinku.reader.domain.history.model.HistoryWithRelations
+import com.shinku.reader.domain.library.service.LibraryPreferences
+import com.shinku.reader.domain.manga.interactor.GetDuplicateLibraryManga
 import com.shinku.reader.domain.manga.interactor.GetManga
 import com.shinku.reader.domain.manga.interactor.NetworkToLocalManga
 import com.shinku.reader.domain.manga.interactor.UpdateManga
@@ -35,7 +43,12 @@ import com.shinku.reader.domain.source.repository.SourceHealthRepository
 import com.shinku.reader.domain.source.service.FeedLimits
 import com.shinku.reader.domain.source.service.SourceManager
 import com.shinku.reader.domain.source.service.SourcePreferences
+import com.shinku.reader.domain.track.interactor.AddTracks
 import com.shinku.reader.presentation.browse.FeedItemUI
+import com.shinku.reader.ui.browse.BrowseSelectionState
+import com.shinku.reader.ui.browse.BulkAddFavoritesHelper
+import com.shinku.reader.ui.browse.BulkAddPreparation
+import com.shinku.reader.ui.browse.BulkFavoriteSummary
 import com.shinku.reader.util.system.LocaleHelper
 import eu.kanade.tachiyomi.source.CatalogueSource
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -100,7 +113,26 @@ open class FeedScreenModel(
     private val deleteFeedCategory: DeleteFeedCategory = Injekt.get(),
     private val getFeedSavedSearchGlobalByCategory: GetFeedSavedSearchGlobalByCategory = Injekt.get(),
     private val countFeedSavedSearchGlobalByCategory: CountFeedSavedSearchGlobalByCategory = Injekt.get(),
+    private val libraryPreferences: LibraryPreferences = Injekt.get(),
+    private val getCategories: GetCategories = Injekt.get(),
+    private val setMangaCategories: SetMangaCategories = Injekt.get(),
+    private val setMangaDefaultChapterFlags: SetMangaDefaultChapterFlags = Injekt.get(),
+    private val addTracks: AddTracks = Injekt.get(),
+    private val getDuplicateLibraryManga: GetDuplicateLibraryManga = Injekt.get(),
 ) : StateScreenModel<FeedScreenState>(FeedScreenState()) {
+
+    private val bulkAddHelper by lazy {
+        BulkAddFavoritesHelper(
+            libraryPreferences = libraryPreferences,
+            getCategories = getCategories,
+            setMangaCategories = setMangaCategories,
+            setMangaDefaultChapterFlags = setMangaDefaultChapterFlags,
+            addTracks = addTracks,
+            updateManga = updateManga,
+            getDuplicateLibraryManga = getDuplicateLibraryManga,
+            shinkuPreferences = shinkuPreferences,
+        )
+    }
 
     private val _events = Channel<Event>(Int.MAX_VALUE)
     val events = _events.receiveAsFlow()
@@ -886,6 +918,82 @@ open class FeedScreenModel(
         mutableState.update { it.copy(dialog = Dialog.FeedFilter) }
     }
 
+    fun enterSelectionMode() {
+        mutableState.update { it.copy(selection = it.selection.enterSelectionMode()) }
+    }
+
+    fun exitSelectionMode() {
+        mutableState.update { it.copy(selection = it.selection.exitSelectionMode()) }
+    }
+
+    fun toggleSelection(manga: DomainManga) {
+        mutableState.update { it.copy(selection = it.selection.toggle(manga)) }
+    }
+
+    private fun loadedFeedManga(): List<DomainManga> {
+        val current = state.value
+        return buildList {
+            if (current.isGlobalTab) {
+                addAll(current.featuredManga)
+                addAll(current.selectedGenreManga.orEmpty())
+                addAll(current.forYouManga)
+                addAll(current.recommendations.orEmpty())
+                current.genreSections.values.forEach { addAll(it) }
+            }
+            if (current.showSourceFeeds) {
+                current.items.orEmpty().forEach { addAll(it.results.orEmpty()) }
+            }
+        }
+    }
+
+    fun selectAllLoaded() {
+        val loaded = loadedFeedManga()
+        mutableState.update { it.copy(selection = it.selection.selectAllLoaded(loaded)) }
+    }
+
+    fun invertLoaded() {
+        val loaded = loadedFeedManga()
+        mutableState.update { it.copy(selection = it.selection.invertLoaded(loaded)) }
+    }
+
+    fun requestBulkAddToLibrary() {
+        val selected = state.value.selection.selectedManga
+        if (selected.isEmpty()) return
+        screenModelScope.launchIO {
+            when (val prep = bulkAddHelper.prepareCategories()) {
+                is BulkAddPreparation.Ready -> {
+                    executeBulkAdd(selected, prep.categoryIds)
+                }
+                is BulkAddPreparation.NeedsCategoryChoice -> {
+                    mutableState.update {
+                        it.copy(
+                            dialog = Dialog.BulkChangeMangaCategory(
+                                mangas = selected,
+                                initialSelection = prep.categories.mapAsCheckboxState { false }.toImmutableList(),
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun confirmBulkAddToLibrary(mangas: List<DomainManga>, categoryIds: List<Long>) {
+        screenModelScope.launchIO {
+            executeBulkAdd(mangas, categoryIds)
+        }
+    }
+
+    private suspend fun executeBulkAdd(mangas: List<DomainManga>, categoryIds: List<Long>) {
+        val summary = bulkAddHelper.addFavorites(
+            mangas = mangas,
+            categoryIds = categoryIds,
+            sourceProvider = { sourceManager.getOrStub(it) },
+        )
+        exitSelectionMode()
+        _events.send(Event.BulkFavoriteResult(summary))
+    }
+
     sealed class Dialog {
         data object FeedFilter : Dialog()
         data class AddFeed(val options: ImmutableList<CatalogueSource>) : Dialog()
@@ -895,17 +1003,23 @@ open class FeedScreenModel(
         data object CreateCategory : Dialog()
         data class EditCategory(val category: FeedCategory) : Dialog()
         data class DeleteCategory(val category: FeedCategory) : Dialog()
+        data class BulkChangeMangaCategory(
+            val mangas: List<DomainManga>,
+            val initialSelection: ImmutableList<CheckboxState.State<Category>>,
+        ) : Dialog()
     }
 
     sealed class Event {
         data object FailedFetchingSources : Event()
         data object TooManyFeeds : Event()
+        data class BulkFavoriteResult(val summary: BulkFavoriteSummary) : Event()
     }
 }
 
 @androidx.compose.runtime.Immutable
 data class FeedScreenState(
     val dialog: FeedScreenModel.Dialog? = null,
+    val selection: BrowseSelectionState = BrowseSelectionState(),
     val categories: kotlinx.collections.immutable.ImmutableList<FeedCategory> = kotlinx.collections.immutable.persistentListOf(),
     val selectedCategoryIndex: Int = 0,
     val items: kotlinx.collections.immutable.ImmutableList<FeedItemUI>? = null,

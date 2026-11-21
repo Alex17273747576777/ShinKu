@@ -1,7 +1,9 @@
 package com.shinku.reader.ui.browse.feed
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -13,6 +15,10 @@ import cafe.adriel.voyager.core.screen.Screen
 import cafe.adriel.voyager.core.stack.StackEvent
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import com.shinku.reader.domain.source.interactor.GetRemoteManga
+import com.shinku.reader.domain.source.service.FeedLimits
+import com.shinku.reader.i18n.MR
+import com.shinku.reader.i18n.sy.SYMR
 import com.shinku.reader.presentation.browse.FeedScreen
 import com.shinku.reader.presentation.browse.components.FeedAddDialog
 import com.shinku.reader.presentation.browse.components.FeedAddSearchDialog
@@ -22,19 +28,17 @@ import com.shinku.reader.presentation.browse.components.FeedDeleteConfirmDialog
 import com.shinku.reader.presentation.browse.components.FeedEditCategoryDialog
 import com.shinku.reader.presentation.browse.components.FeedFilterDialog
 import com.shinku.reader.presentation.browse.components.FeedManageCategoriesDialog
+import com.shinku.reader.presentation.category.components.ChangeCategoryDialog
 import com.shinku.reader.presentation.components.AppBar
 import com.shinku.reader.presentation.components.TabContent
+import com.shinku.reader.presentation.core.i18n.stringResource
 import com.shinku.reader.ui.browse.source.browse.BrowseSourceScreen
 import com.shinku.reader.ui.browse.source.globalsearch.GlobalSearchScreen
+import com.shinku.reader.ui.category.CategoryScreen
 import com.shinku.reader.ui.manga.MangaScreen
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import com.shinku.reader.domain.source.interactor.GetRemoteManga
-import com.shinku.reader.domain.source.service.FeedLimits
-import com.shinku.reader.i18n.MR
-import com.shinku.reader.i18n.sy.SYMR
-import com.shinku.reader.presentation.core.i18n.stringResource
 
 @Composable
 fun Screen.feedTab(): TabContent {
@@ -60,6 +64,17 @@ fun Screen.feedTab(): TabContent {
         titleRes = SYMR.strings.feed,
         actions = persistentListOf(
             AppBar.Action(
+                title = "Select",
+                icon = Icons.Outlined.Checklist,
+                onClick = {
+                    if (state.selection.selectionMode) {
+                        screenModel.exitSelectionMode()
+                    } else {
+                        screenModel.enterSelectionMode()
+                    }
+                },
+            ),
+            AppBar.Action(
                 title = stringResource(MR.strings.action_add),
                 icon = Icons.Outlined.Add,
                 onClick = {
@@ -81,6 +96,10 @@ fun Screen.feedTab(): TabContent {
             ),
         ),
         content = { contentPadding, snackbarHostState ->
+            BackHandler(enabled = state.selection.selectionMode) {
+                screenModel.exitSelectionMode()
+            }
+
             FeedScreen(
                 state = state,
                 contentPadding = contentPadding,
@@ -107,8 +126,19 @@ fun Screen.feedTab(): TabContent {
                 },
                 onClickDelete = screenModel::openDeleteDialog,
                 onClickManga = { manga ->
-                    navigator.push(MangaScreen(manga.id, true))
+                    if (state.selection.selectionMode) {
+                        screenModel.toggleSelection(manga)
+                    } else {
+                        navigator.push(MangaScreen(manga.id, true))
+                    }
                 },
+                onLongClickManga = { manga ->
+                    screenModel.toggleSelection(manga)
+                },
+                onCancelSelectionMode = screenModel::exitSelectionMode,
+                onSelectAllLoaded = screenModel::selectAllLoaded,
+                onInvertLoaded = screenModel::invertLoaded,
+                onAddSelectedToLibrary = screenModel::requestBulkAddToLibrary,
                 onClickGenre = screenModel::selectGenre,
                 onSeeAllGenre = { genre ->
                     navigator.push(GlobalSearchScreen(genre))
@@ -217,6 +247,17 @@ fun Screen.feedTab(): TabContent {
                             },
                         )
                     }
+                    is FeedScreenModel.Dialog.BulkChangeMangaCategory -> {
+                        ChangeCategoryDialog(
+                            initialSelection = dialog.initialSelection,
+                            onDismissRequest = screenModel::dismissDialog,
+                            onEditCategories = { navigator.push(CategoryScreen()) },
+                            onConfirm = { include, _ ->
+                                screenModel.confirmBulkAddToLibrary(dialog.mangas, include)
+                                screenModel.dismissDialog()
+                            },
+                        )
+                    }
                 }
             }
 
@@ -235,6 +276,9 @@ fun Screen.feedTab(): TabContent {
                         }
                         FeedScreenModel.Event.TooManyFeeds -> {
                             launch { snackbarHostState.showSnackbar(tooManyFeedsString) }
+                        }
+                        is FeedScreenModel.Event.BulkFavoriteResult -> {
+                            launch { snackbarHostState.showSnackbar(event.summary.formatMessage()) }
                         }
                     }
                 }

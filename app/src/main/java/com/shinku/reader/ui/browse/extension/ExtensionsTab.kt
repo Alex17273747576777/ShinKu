@@ -1,5 +1,10 @@
 package com.shinku.reader.ui.browse.extension
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Checklist
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -12,17 +17,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import cafe.adriel.voyager.navigator.LocalNavigator
 import cafe.adriel.voyager.navigator.currentOrThrow
+import com.shinku.reader.extension.model.Extension
+import com.shinku.reader.i18n.MR
 import com.shinku.reader.presentation.browse.ExtensionScreen
 import com.shinku.reader.presentation.components.AppBar
 import com.shinku.reader.presentation.components.TabContent
+import com.shinku.reader.presentation.core.i18n.stringResource
 import com.shinku.reader.presentation.more.settings.screen.browse.ExtensionReposScreen
-import com.shinku.reader.extension.model.Extension
 import com.shinku.reader.ui.browse.extension.details.ExtensionDetailsScreen
 import com.shinku.reader.ui.webview.WebViewScreen
 import com.shinku.reader.util.system.isPackageInstalled
 import kotlinx.collections.immutable.persistentListOf
-import com.shinku.reader.i18n.MR
-import com.shinku.reader.presentation.core.i18n.stringResource
 
 @Composable
 fun extensionsTab(
@@ -39,16 +44,26 @@ fun extensionsTab(
         badgeNumber = state.updates.takeIf { it > 0 },
         searchEnabled = true,
         actions = persistentListOf(
-            AppBar.OverflowAction(
+            AppBar.Action(
+                title = "Select",
+                icon = Icons.Outlined.Checklist,
+                onClick = extensionsScreenModel::toggleSelectionMode,
+            ),
+            AppBar.Action(
                 title = stringResource(MR.strings.action_filter),
+                icon = Icons.Outlined.FilterList,
                 onClick = { navigator.push(ExtensionFilterScreen()) },
             ),
-            AppBar.OverflowAction(
+            AppBar.Action(
                 title = stringResource(MR.strings.label_extension_repos),
+                icon = Icons.Outlined.Dns,
                 onClick = { navigator.push(ExtensionReposScreen()) },
             ),
         ),
         content = { contentPadding, _ ->
+            BackHandler(enabled = state.selectionMode) {
+                extensionsScreenModel.exitSelectionMode()
+            }
             ExtensionScreen(
                 state = state,
                 contentPadding = contentPadding,
@@ -84,6 +99,9 @@ fun extensionsTab(
                 onUninstallExtension = { extensionsScreenModel.uninstallExtension(it) },
                 onUpdateExtension = extensionsScreenModel::updateExtension,
                 onRefresh = extensionsScreenModel::findAvailableExtensions,
+                onToggleSelectExtension = extensionsScreenModel::toggleExtensionSelection,
+                onCancelSelectionMode = extensionsScreenModel::exitSelectionMode,
+                onInstallSelected = extensionsScreenModel::installOrUpdateSelected,
             )
 
             privateExtensionToUninstall?.let { extension ->
